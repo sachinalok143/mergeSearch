@@ -43,32 +43,15 @@ class Search_model extends CI_Model {
 		$result = array();
 		$this->db->select('Coll_Name, coll_ID');
 		$this->db->order_by('date','desc');
-		// $this->db->limit(1);
+		$this->db->limit(1);
 		$this->db->like('Coll_Name', $coll, 'after');
 		$id = $this->db->get('Log_Table');
-		$prevId='';
 		foreach ($id->result_array() as $row) {
-			if ($row['coll_ID']==$prevId) {
-				continue;
-			}
 			if($row['Coll_Name'] != NULL) {
 				$val = trim($row['Coll_Name']) . " (" . $row['coll_ID'] . ")" . "<br>" ;
 				array_push($result,$val);
-				$prevId=$row['coll_ID'];
 			}
 		}
-
-		/*$this->db->select('primary_college, colg_id');
-		$this->db->order_by('date','desc');
-		// $this->db->limit(1);
-		$this->db->like('Coll_Name', $coll, 'after');
-		$id = $this->db->get('Log_Table');
-		/*foreach ($id->result_array() as $row) {
-			if($row['Coll_Name'] != NULL) {
-				$val = trim($row['Coll_Name']) . " (" . $row['coll_ID'] . ")" . "<br>" ;
-				array_push($result,$val);
-			}
-		}*/
 		return $result;
 	}
 	public function findAttribute($coll) {
@@ -401,25 +384,35 @@ class Search_model extends CI_Model {
 		return $result;
 	}
 
-	public function showfilters()
+	public function showFilters()
 	{
 		$finalResult = array();
-		$display = ["Streams/Schools","Degree","Majors"];	//Columns to display
-		foreach ($display as $response)
+		$display = ["Streams","Degrees","Majors"];	//Columns to display
+		for($i=1;$i<=3;$i++)
 		{
 			$result = array();
-			$result['label'] = $response;
+			$result['label'] = $display[$i-1];
 			$result['options'] = array();
 			//array_push($result['options'],"All");
-			
+			/*
 			$this->db->distinct();
 			$this->db->select('NODE_VALUE');
 			$this->db->where('NODE_NAME',$response);
 			$query = $this->db->get('table2');
+			*/
+			$this->db->distinct();
+			$this->db->select('node_Value');
+			$this->db->where('Slevel',$i);
+			$query = $this->db->get('temp_table2');
+			/*
+			$temp_query = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Name = '$response'");
+			$temp_query = $temp_query->result();
+			$query = $this->db->query("SELECT DISTINCT node_Value FROM temp_table2 WHERE s_Node_ID IN ('".implode(',', $temp_query)."')");
+			*/
 			foreach($query->result() as $row)
 			{
-				if($row->NODE_VALUE != NULL)
-					array_push($result['options'],$row->NODE_VALUE);
+				if($row->node_Value != NULL)
+					array_push($result['options'],$row->node_Value);
 			}
 			array_push($finalResult,$result);
 		}
@@ -437,7 +430,7 @@ class Search_model extends CI_Model {
 		foreach($data as $row)
 			array_push($result['options'],$this->college_model->getCountry($row->CountryCode));
 		array_push($finalResult,$result);
-		
+		//echo '<pre>'; print_r($finalResult); echo '</pre>';
 		return $finalResult;
 	}
 
@@ -490,14 +483,14 @@ class Search_model extends CI_Model {
 			$this->load->model('log_model');
 			foreach($searchQuery as $term)
 			{
-				$this->db->like('Node_Name','_'.$term,'before');
-				$num = $this->db->count_all_results('NODETABLE');
+				$this->db->like('Node_Name',$term);
+				$num = $this->db->count_all_results('temp_struct_nodetable');
 				if($num>0)
 					$this->log_model->addToLogStatic($term,SEARCH_QUERY,TYPE_STRUCTURE);
 				else
 				{
-					$this->db->like('Node_Name','_'.$term,'before');
-					$num = $this->db->count_all_results('AttributeNodeTable');
+					$this->db->like('Node_Name',$term);
+					$num = $this->db->count_all_results('temp_attr_nodetable');
 					if($num>0)
 						$this->log_model->addToLogStatic($term,SEARCH_QUERY,TYPE_ATTRIBUTE);
 					else
@@ -518,18 +511,34 @@ class Search_model extends CI_Model {
 			foreach($filters as $filter)
 			{
 				if($filter->label != 'Country')
-				{
+				{	/*
+					$temp_query = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Name == '$filter->label'");
+					$data = $this->db->query("SELECT coll_ID  FROM temp_table2 WHERE node_Value IN ('$filter->checked') AND s_Node_ID IN ('".implode(',',$temp_query->result())."') GROUP BY coll_ID");
+					/*
 					$this->db->select('COLL_ID');
 					$this->db->where_in('NODE_VALUE',$filter->checked);
 					$this->db->where('NODE_NAME',$filter->label);
 					$this->db->group_by('COLL_ID');
 					$data = $this->db->get('table2')->result();
+					*/
+					if($filter->label = 'Stream')
+						$level = 1;
+					else if($filter->label = 'Degree')
+						$level = 2;
+					else if($filter->label = 'Major')
+						$level = 3;
+					$this->db->select('coll_ID');
+					$this->db->where_in('node_Value',$filter->checked);
+					$this->db->where('Slevel',$level);
+					$this->db->group_by('coll_ID');
+					$data = $this->db->get('temp_table2')->result();
+
 					foreach($data as $row)
 					{
-						if(isset($collegeValid[$row->COLL_ID]))
-							$collegeValid[$row->COLL_ID] += 1;
+						if(isset($collegeValid[$row->coll_ID]))
+							$collegeValid[$row->coll_ID] += 1;
 						else
-							$collegeValid[$row->COLL_ID] = 1;
+							$collegeValid[$row->coll_ID] = 1;
 					}
 				}
 				else
@@ -583,15 +592,25 @@ class Search_model extends CI_Model {
 			$i = 0;
 			foreach($searchQuery as $term)
 			{
+				/*
+				$data = $this->db->query("SELECT coll_ID, COUNT(coll_ID) AS COUNT FROM temp_struct_nodetable WHERE node_Value LIKE '$term' AND coll_ID IN ('".implode(',',$colleges)."') GROUP BY coll_ID");
+				*/
+				$this->db->select('coll_ID,COUNT(coll_ID) AS COUNT');
+				$this->db->like('node_Value',$term);
+				$this->db->where_in('coll_ID',$colleges);
+				$this->db->group_by('coll_ID');
+				$data = $this->db->get('temp_table2')->result();
+					/*
 				$this->db->select('COLL_ID,COUNT(COLL_ID) AS COUNT');
 				$this->db->like('NODE_VALUE',$term);
 				$this->db->where_in('COLL_ID',$colleges);
 				$this->db->group_by('COLL_ID');
 				$data = $this->db->get('table2')->result();
+				*/
 				foreach($data as $row)
 				{
-					$found[$row->COLL_ID][$i] = "1";
-					$collegeOrder[$row->COLL_ID] =$collegeOrder[$row->COLL_ID] + (count($searchQuery) - $i) + ($row->COUNT*strlen($term));
+					$found[$row->coll_ID][$i] = "1";
+					$collegeOrder[$row->coll_ID] =$collegeOrder[$row->coll_ID] + (count($searchQuery) - $i) + ($row->COUNT*strlen($term));
 				}
 				$i++;
 			}
@@ -616,18 +635,33 @@ class Search_model extends CI_Model {
 			$i=0;
 			foreach($searchQuery as $term)
 			{
+				/*
+				$nodeNameData = $this->db->query("SELECT coll_ID, COUNT(coll_ID) AS COUNT FROM temp_struct_nodetable WHERE node_Value LIKE '$term' AND coll_ID IN ('".implode(',',$colleges)."') GROUP BY coll_ID");
+				*/
+				$this->db->select('Snode_ID');
+				$this->db->like('Snode_Name',$term);
+				$term_id = $this->db->get('temp_struct_nodetable')->result();
+
+				$this->db->select('coll_ID,COUNT(coll_ID) AS COUNT');
+				$this->db->where_in('s_Node_ID',$term_id);
+				$this->db->where('a_Node_ID',0);
+				$this->db->where_in('coll_ID',$colleges);
+				$this->db->group_by('coll_ID');
+				$nodeNameData = $this->db->get('temp_table2')->result();
+				/*
 				$this->db->select('COLL_ID,COUNT(COLL_ID) AS COUNT');
 				$this->db->like('NODE_NAME',$term);
 				$this->db->where_in('COLL_ID',$colleges);
 				$this->db->group_by('COLL_ID');
 				$nodeNameData = $this->db->get('table2')->result();
+				*/
 				foreach($nodeNameData as $row)
 				{
-					$found[$row->COLL_ID][$i] = "1";
-					if(isset($collegeOrder[$row->COLL_ID]))
-						$collegeOrder[$row->COLL_ID] = $collegeOrder[$row->COLL_ID] + (count($searchQuery) - $i) + strlen($term)*$row->COUNT;
+					$found[$row->coll_ID][$i] = "1";
+					if(isset($collegeOrder[$row->coll_ID]))
+						$collegeOrder[$row->coll_ID] = $collegeOrder[$row->coll_ID] + (count($searchQuery) - $i) + strlen($term)*$row->COUNT;
 					else
-						$collegeOrder[$row->COLL_ID] = strlen($term)*$row->COUNT;	
+						$collegeOrder[$row->coll_ID] = strlen($term)*$row->COUNT;	
 				}
 				$i++;
 			}
@@ -674,22 +708,38 @@ class Search_model extends CI_Model {
 		$collegeOrderKeys = array_slice($collegeOrderKeysComp,$page*$resultsPerPage,$resultsPerPage,true);
 		$collegeOrderKeys = array_values($collegeOrderKeys);
 		$finalResult = array();
-		$display = ["Streams/Schools","Degree","Majors"];	//Columns to display
+		$display = ["Stream","Degree","Major"];	//Columns to display
 		if(count($collegeOrderKeys)>0)
 		{
 			foreach($display as $response)
 			{
 				$label = $response;
+				/*
+				$temp_query = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Name == '$response'");
+				$queryData = $this->db->query("SELECT coll_ID, node_Value FROM temp_struct_nodetable WHERE Snode_ID IN ('".implode(',',$temp_query->result())."') AND coll_ID IN ('".implode(',',$collegeOrderKeys)."') ORDER BY coll_ID DESC");*/
+
+				$this->db->select('Snode_ID');
+				$this->db->where('node_Name',$response);
+				$queryData_id = $this->db->get('temp_struct_nodetable');
+
+				$this->db->select('coll_ID,node_Value');
+				$this->db->where_in('s_Node_ID',$query_Data);
+				$this->db->where('a_Node_ID',0);
+				$this->db->where_in('coll_ID',$collegeOrderKeys);
+				$this->db->order_by('coll_ID','DESC');
+				$queryData = $this->db->get('temp_table2')->result();
+				/*
 				$this->db->select('COLL_ID,NODE_VALUE');
 				$this->db->where('NODE_NAME',$response);
 				$this->db->where_in('COLL_ID',$collegeOrderKeys);
 				$this->db->order_by('COLL_ID','DESC');
 				$queryData = $this->db->get('table2')->result();
+				*/
 				$prev = -1;
 				$result = array();
 				foreach($queryData as $row)
 				{
-					if($row->COLL_ID != $prev)
+					if($row->coll_ID != $prev)
 					{
 						if($prev != -1)
 						{
@@ -697,9 +747,9 @@ class Search_model extends CI_Model {
 							$result = array();
 						}
 					}
-					if($row->NODE_VALUE != NULL)
-						array_push($result,$row->NODE_VALUE);
-					$prev = $row->COLL_ID;
+					if($row->node_Value != NULL)
+						array_push($result,$row->node_Value);
+					$prev = $row->coll_ID;
 				}
 				if($prev !=-1)
 				{
@@ -930,6 +980,17 @@ class Search_model extends CI_Model {
       $data['queryTerm']=$searchQuery;
       return $data;
    }
+
+   function getAllfilters_new()	
+   {
+   		$Streams = $this->db->query("SELECT DISTINCT Snode_Name, Snode_ID FROM temp_struct_nodetable WHERE Slevel = 1");
+   		$Degrees = $this->db->query("SELECT DISTINCT Snode_Name FROM temp_struct_nodetable WHERE Slevel = 2");
+   		$Majors = $this->db->query("SELECT DISTINCT Snode_Name,Snode_ID FROM temp_struct_nodetable WHERE Slevel = 3");
+   		$Parents = $this->db->query("SELECT DISTINCT Snode_Type FROM Temp_struct_nodetable");
+   		$Countries = $this->db->query("SELECT DISTINCT Country_Name FROM Country WHERE Country_Name !='International'");
+   		$Fees = $this->db->query("SELECT node_Name FROM temp_attr_nodetable WHERE node_ID = 10");
+   		return array($Parents->result_array(),$Streams->result_array(),$Degrees->result_array(),$Majors->result_array(),$Countries->result_array(),$Fees->result_array());
+   }
    
    function getAllfilters()
    {
@@ -996,33 +1057,42 @@ class Search_model extends CI_Model {
    } */
   
  //one common function for any type of pnode
- function getfield($rank,$pnode) 
- {
+   function getfield($rank,$pnode) 
+   {
+ 	/*echo $pnode;
+ 	echo " ";
+ 	echo gettype($pnode);
+ 	echo " Space ";*/
  	$this->load->model('college_model');
-   $result=array();
+ 	$result=array();
 
-	for($i=0;$i<sizeof($rank);$i++)
-	{
-	$query = $this->db->query("SELECT * FROM college where COLL_NAME LIKE '".$rank[$i]['COLL_NAME']."'");
-	$q1=$query->row();
-	$query2 = $this->db->query("SELECT NODE_VALUE FROM table2 where S_Node=0 AND P_NODE = '$pnode' AND COLL_ID = '$q1->COLL_ID' ");
-	$sum = 0;$average=0;
-	if($query2->num_rows()){
-	for($j=0;$j<$query2->num_rows();$j++)
-	{
-		$sum = $sum + $query2->row($j)->NODE_VALUE;
-	}
-		$average  = $sum / $query2->num_rows();
-		$currency = $this->college_model->get_currency($q1->CountryCode);
-		$average  = $currency['currency'].' '.$average;
+ 	for($i=0;$i<sizeof($rank);$i++)
+ 	{
+ 		$query = $this->db->query("SELECT * FROM college where COLL_NAME LIKE '".$rank[$i]['COLL_NAME']."'");
+ 		$q1=$query->row();
+ 		//echo '<pre>'; print_r($q1->COLL_ID); echo '</pre>';
+ 		
+ 		$query2 = $this->db->query("SELECT node_Value FROM temp_table2 where s_Node_ID=0 AND a_Node_ID = '$pnode' AND coll_ID = '$q1->COLL_ID' ");
+ 		//echo '<pre>'; print_r($query2->result_array()); echo '</pre>';
+ 		$sum = 0;$average=0;
+ 		if($query2->num_rows()){
+ 			for($j=0;$j<$query2->num_rows();$j++)
+ 			{
+ 				$sum = $sum + $query2->row($j)->node_Value;
+ 			}
+ 			$average  = $sum / $query2->num_rows();
+ 			$currency = $this->college_model->get_currency($q1->CountryCode);
+ 			//if($pnode == 10 || $pnode == 15)
+			//	$average  = $currency['currency'].' '.$average; //currency should not be appended for every type of node
+
 	}
 	else{
 		$average='NA';
 	}
 	array_push($result,$average);
-	}
-	return $result;
- }
+}
+return $result;
+}
   /*
  function getfee($rank)
  {
@@ -1414,6 +1484,107 @@ class Search_model extends CI_Model {
 	  return $string;
    }
  
+function filterslist_new($node_type,$node_id,$equality,$node_value)
+{
+	$temporary = array();
+	$s_list = array(); $a_list = array(); $p_list = array();
+	$list = array();
+	$query = $this->db->query("SELECT DISTINCT COLL_ID FROM college");
+
+	//echo '<pre>'; print_r($query->result_array()); echo '</pre>';
+
+	for($j=0;$j<sizeof($query->result());$j++)
+	{
+		$q=$query->row($j);
+		$temporary[$j] =  $q->COLL_ID;
+	}
+
+	//echo '<pre>'; print_r($node_type); echo '</pre>';
+
+	//print_r($node_type);
+	for($i=0;$i<sizeof($node_type);$i++)
+	{
+		if($node_type[$i] == 'S')
+		{	//echo "testS";
+			//$_SESSION['field'] = 'Annual Expenses';
+			//$_SESSION['field_id'] = 10;
+			if($node_id[$i])
+			$query = $this->db->query("SELECT * FROM temp_table2 WHERE a_Node_ID = 0 AND node_Value LIKE '".$node_value[$i]."' ");
+			for($j=0;$j<sizeof($query->result());$j++)
+			{
+				 $q=$query->row($j);
+				 $s_list[$j] =  $q->coll_ID;
+			}
+			$s_list = array_unique($s_list);
+			if(empty($list))
+				$list = $s_list;
+			else
+				$list = array_intersect($list, $s_list);
+			//echo '<pre>'; print_r($list); echo '</pre>';
+		}
+
+		else if($node_type[$i] == 'A')
+		{	//echo "testA";
+			$field_query = $this->db->query("SELECT node_Name FROM temp_attr_nodetable WHERE node_ID = '$node_id[$i]'"); 
+			$field_query = $field_query->row();
+			$_SESSION['field_name'] = $field_query->node_Name;
+			$_SESSION['field_id'] = $node_id[$i];
+			if($equality[$i] == '=')
+			{
+				$query = $this->db->query("SELECT * FROM temp_table2 WHERE s_Node_ID = 0 AND a_Node_ID = '$node_id[$i]' AND node_Value = '$node_value[$i]'");
+			}
+			else if($equality[$i] == '<')
+			{
+				$query = $this->db->query("SELECT * FROM temp_table2 WHERE s_Node_ID = 0 AND a_Node_ID = '$node_id[$i]' AND node_Value < '$node_value[$i]'");
+			}
+			else if($equality[$i] == '>')
+			{
+				$query = $this->db->query("SELECT coll_ID FROM temp_table2 WHERE s_Node_ID = 0 AND a_Node_ID = '$node_id[$i]' AND node_Value > '$node_value[$i]'");
+			}
+
+			for($j=0;$j<sizeof($query->result());$j++)
+			{
+				 $q=$query->row($j);
+				 $a_list[$j] =  $q->coll_ID;
+			}
+			$a_list = array_unique($a_list);
+			
+			if(empty($list))
+				$list = $a_list;
+			else
+				$list = array_intersect($list, $a_list);
+			//echo '<pre>'; print_r($list); echo '</pre>';
+		}
+
+		else if($node_type[$i] == 'P')
+		{	
+			$_SESSION['field_name'] = 'Annual Expenses';
+			if($equality[$i] == '>')
+			{
+				$query = $this->db->query("SELECT COLL_ID FROM psycho_table2 WHERE D_Node = '$node_id[$i]' AND MU > '$node_value[$i]'");
+			}
+			else if($equality[$i] == '<')
+			{
+				$query = $this->db->query("SELECT COLL_ID FROM psycho_table2 WHERE D_Node = '$node_id[$i]' AND MU < '$node_value[$i]'");
+			}
+
+			for($j=0;$j<sizeof($query->result());$j++)
+			{
+				 $q=$query->row($j);
+				 $p_list[$j] =  $q->COLL_ID;
+			}
+			$p_list = array_unique($p_list);
+			if(empty($list))
+				$list = $p_list;
+			else
+				$list = array_intersect($list, $p_list);
+		}
+
+	}
+	//echo '<pre>'; print_r($list); echo '</pre>';
+	return $list;
+}
+
    function filterslist($stream,$major,$degree,$country)
    {
 	   $college_stream = array();
@@ -1442,19 +1613,18 @@ class Search_model extends CI_Model {
 	   }else{
 		   for($i=0;$i<sizeof($stream);$i++)
 		   {
-			    $query = $this->db->query("SELECT Node_Name FROM NODETABLE where Node_ID LIKE '".$stream[$i]."' ");
+			    $query = $this->db->query("SELECT Snode_Name FROM temp_struct_nodetable where Snode_ID LIKE '".$stream[$i]."' ");
 				$query = $query->result();
-				$stream[$i] = $query[0]->Node_Name;
-				$stream[$i] = str_replace("Yes_", "", $stream[$i]);
+				$stream[$i] = $query[0]->Snode_Name;
 		   }
 		   
 	   for($i=0;$i<sizeof($stream);$i++)
 	   {
-	   $query = $this->db->query("SELECT * FROM table2 where NODE_VALUE LIKE  '".$stream[$i]."' ");
+	   $query = $this->db->query("SELECT * FROM temp_table2 where node_Value LIKE  '".$stream[$i]."' ");
 		 for($j=0;$j<sizeof($query->result());$j++)
 		 {
 			 $q=$query->row($j);
-			 $college_stream[$k] =  $q->COLL_ID;
+			 $college_stream[$k] =  $q->coll_ID;
 			 $k++;
 		 }
 	   }}
@@ -1470,18 +1640,17 @@ class Search_model extends CI_Model {
 	   }else{
 		    for($i=0;$i<sizeof($major);$i++)
 		   {
-			    $query = $this->db->query("SELECT Node_Name FROM NODETABLE where Node_ID LIKE '".$major[$i]."' ");
+			    $query = $this->db->query("SELECT Snode_Name FROM temp_struct_nodetable where Snode_ID LIKE '".$major[$i]."' ");
 				$query = $query->result();
-				$major[$i] = $query[0]->Node_Name;
-				$major[$i] = str_replace("Yes_", "", $major[$i]);
+				$major[$i] = $query[0]->Snode_Name;
 		   }
 	    for($i=0;$i<sizeof($major);$i++)
 	   {
-	    $query = $this->db->query("SELECT * FROM table2 where NODE_VALUE LIKE  '".$major[$i]."' ");
+	    $query = $this->db->query("SELECT * temp_table2 where node_Value LIKE  '".$major[$i]."' ");
 		 for($j=0;$j<sizeof($query->result());$j++)
 		 {
 			 $q=$query->row($j);
-			 $college_major[$k] =  $q->COLL_ID;
+			 $college_major[$k] =  $q->coll_ID;
 			 $k++;
 		 }
 	   }}
@@ -1498,11 +1667,11 @@ class Search_model extends CI_Model {
 	   else{
 	     for($i=0;$i<sizeof($degree);$i++)
 	   {
-	    $query = $this->db->query("SELECT * FROM table2 where NODE_VALUE LIKE  '".$degree[$i]."' ");
+	    $query = $this->db->query("SELECT * FROM temp_table2 where node_Value LIKE  '".$degree[$i]."' ");
 		 for($j=0;$j<sizeof($query->result());$j++)
 		 {
 			 $q=$query->row($j);
-			 $college_degree[$k] =  $q->COLL_ID;
+			 $college_degree[$k] =  $q->coll_ID;
 			 $k++;
 		 }
 	   }}
@@ -1539,28 +1708,48 @@ class Search_model extends CI_Model {
    {
 	    $this->load->model("College_model");
 		$rank = array();
-	    $cluster = array();
+	      $cluster = array();
 		if(count($tags) == 0)
-		{
+		{ 
 			$query = $this->db->query("SELECT * FROM college ORDER BY Views DESC");
-			$query = $query->result(); 
-			$rank = array();
+			 $query = $query->result(); 
+			 
+			
 			for($i=0;$i<sizeof($query);$i++)
 			{
+				 
 				$rank[$i]['COLL_NAME'] =  $query[$i]->COLL_NAME;
-				$rank[$i]['score']     =  0;
-				$rank[$i]['views']     =  $query[$i]->Views;
-				$rank[$i]['id']        =  $query[$i]->COLL_ID;
-	            $rank[$i]['streams']   =  "";
-	            $rank[$i]['degree']    =  "";
-	            $rank[$i]['city']	   =  $query[$i]->city;
+				$rank[$i]['score'] = 0;
+				$rank[$i]['views']=  $query[$i]->Views;
+				$rank[$i]['id'] =  $query[$i]->COLL_ID;
 	            $rank[$i]['encoded_id'] = $this->College_model->id_encode($rank[$i]['id']);
-		        $stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$i]['id'],
-		             											    'NODE_NAME   =' => 'Streams/Schools',
-		             											    'NODE_VALUE !=' => NULL));
+	            $rank[$i]['streams']   =  "";
+        		$rank[$i]['degree']    =  "";
+	         	$rank[$i]['city']      = $query[$i]->city;
+/*
+	         	$stream_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Stream'");
+	         	$temp = $rank[0]['id'];
+	         	$temp2 = '';
+				foreach($stream_id->result_array() as $row)
+				{
+					$temp2 .= $row['Snode_ID'] . ',' ;
+				}
+	         	$stream_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '".$rank[0]['id']."' AND node_Value != NULL AND s_Node_ID IN ('".implode(',', $stream_id->result())."')");*/
+
+	         	$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$i]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+	         	//echo '<pre>'; print_r($stream_query->result_array()); echo '</pre>';
+	         	/*
+				$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[0]['id'],
+         											    'NODE_NAME   =' => 'Streams/Schools',
+         											    'NODE_VALUE !=' => NULL));
+         											    */
+				//echo '<pre>'; print_r($stream_query->result_array()); echo '</pre>';
+         		
 		        foreach($stream_query->result() as $stream_row)
 		        {
-		        	 $rank[$i]['streams'] =  $rank[$i]['streams'].$stream_row->NODE_VALUE.', ';
+		        	 $rank[$i]['streams'] =  $rank[$i]['streams'].$stream_row->node_Value.', ';
 		        }
 		        /*
 					For the undergraduate ,postgraduate and doctoral to count only once.
@@ -1568,33 +1757,49 @@ class Search_model extends CI_Model {
 				$undergraduate = 0;
 				$doctoral = 0;
 				$masters = 0;
-		        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$i]['id'],
+/*
+				$degree_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Degree'");
+	         	$temp = $rank[$i]['id'];
+	         	$temp2 = '';
+				foreach($degree_id->result_array() as $row)
+				{
+					$temp2 .= $row['Snode_ID'] . ',' ;
+				}
+	         	$degree_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '".$rank[$i]['id']."' AND node_Value != 'NULL' AND s_Node_ID IN ('".implode(',', $degree_id->result_array())."')");
+*/
+	         	$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$i]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+
+	         	//echo '<pre>'; print_r($degree_query->result_array()); echo '</pre>';
+
+		        /*$degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$i]['id'],
 		             											    'NODE_NAME   =' => 'Degrees',
-		             											    'NODE_VALUE !=' => NULL));
+		             											    'NODE_VALUE !=' => NULL));*/
 		        foreach($degree_query->result() as $degree_row)
 		        {
-		        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+		        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 		        	{
 		        		$undergraduate = 1;
-		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->NODE_VALUE.', ';
+		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->node_Value.', ';
 		        	}
-		        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+		        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 		        	{
 		        		$masters = 1;
-		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->NODE_VALUE.', ';
+		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->node_Value.', ';
 		        	}
-		        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+		        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 		        	{
 		        		$doctoral = 1;
-		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->NODE_VALUE.', ';
+		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->node_Value.', ';
 		        	}
-		        }
-					 
-			  }
+		        }				 
+						 
+			}
 		}
 		else
 		{
-			
+				
 	//	array_unshift($tags, "tag");
 	     //longest tag
 			/*$lengths = array_map('str_word_count', $tags);
@@ -1602,7 +1807,7 @@ class Search_model extends CI_Model {
 			$index = array_search($maxLength, $lengths);
 			$majorTag = $tags[$index]; */
 		//	$majorTag = $val;
-	     $queryMajorTag = $this->db->query("SELECT primary_college FROM synonyms where synonym LIKE '".$majorTag."'");
+	    $queryMajorTag = $this->db->query("SELECT primary_college FROM synonyms where synonym LIKE '".$majorTag."'");
 		if($queryMajorTag->num_rows()>0)
 		{    
 	        //Main query tag
@@ -1612,17 +1817,34 @@ class Search_model extends CI_Model {
 			 $rank[0]['COLL_NAME'] = $queryMajorTag[0]->primary_college;
 			 $rank[0]['score'] = 40;
              $rank[0]['views']= $queryMajorTagViews[0]->Views;
-			  $rank[0]['id'] = $queryMajorTagViews[0]->COLL_ID;
+			 $rank[0]['id'] = $queryMajorTagViews[0]->COLL_ID;
 			 $rank[0]['encoded_id'] = $this->College_model->id_encode($rank[0]['id']);
 			 $rank[0]['streams']   =  "";
-   			$rank[0]['degree']    =  "";
-   			$rank[0]['city']      = $queryMajorTagViews[0]->city;
+   			 $rank[0]['degree']    =  "";
+	         $rank[0]['city']      = $queryMajorTagViews[0]->city;
+
+
+	       /* $stream_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Stream'");
+	         	$temp = $rank[0]['id'];
+	         	$temp2 = '';
+				foreach($stream_id->result_array() as $row)
+				{
+					$temp2 .= $row['Snode_ID'] . ',' ;
+				}
+	         	$stream_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");
+*/
+	         	$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[0]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+
+			/*
 			$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[0]['id'],
          											    'NODE_NAME   =' => 'Streams/Schools',
          											    'NODE_VALUE !=' => NULL));
+     		*/
 	        foreach($stream_query->result() as $stream_row)
 	        {
-	        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+	        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 	        }
 	        /*
 				For the undergraduate ,postgraduate and doctoral to count only once.
@@ -1630,28 +1852,43 @@ class Search_model extends CI_Model {
 			$undergraduate = 0;
 			$doctoral = 0;
 			$masters = 0;
+
+			/*$degree_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Degree'");
+	         	$temp = $rank[0]['id'];
+	         	$temp2 = '';
+				foreach($degree_id->result_array() as $row)
+				{
+					$temp2 .= $row['Snode_ID'] . ',' ;
+				}
+	         	$degree_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");*/
+
+	         	$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[0]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+
+			/*
 	        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[0]['id'],
 	             											    'NODE_NAME   =' => 'Degrees',
 	             											    'NODE_VALUE !=' => NULL));
+	        */
 	        foreach($degree_query->result() as $degree_row)
 	        {
-	        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+	        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 	        	{
 	        		$undergraduate = 1;
-	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->NODE_VALUE.', ';
+	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->node_Value.', ';
 	        	}
-	        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+	        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 	        	{
 	        		$masters = 1;
-	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->NODE_VALUE.', ';
+	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->node_Value.', ';
 	        	}
-	        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+	        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 	        	{
 	        		$doctoral = 1;
-	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->NODE_VALUE.', ';
+	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->node_Value.', ';
 	        	}
 	        }
-
 			
 			 //phrase
 			 $phrase= $this->db->query("SELECT primary_college FROM synonyms where synonym LIKE '% ".$majorTag." %' OR synonym LIKE '".$majorTag." %' OR synonym LIKE '".$majorTag."'");
@@ -1677,41 +1914,66 @@ class Search_model extends CI_Model {
 						 $rank[$k]['views']=  $phraseViews[0]->Views;
 						 $rank[$k]['id'] =  $phraseViews[0]->COLL_ID;
 			             $rank[$k]['encoded_id'] = $this->College_model->id_encode($rank[$k]['id']);
-			             $rank[$k]['streams']   =  "";
+			            $rank[$k]['streams']   =  "";
 	           			 $rank[$k]['degree']    =  "";
 	           			 $rank[$k]['city']      = $phraseViews[0]->city;
+
+	           			/* $stream_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Stream'");
+	         				$stream_id = $stream_id->result();
+	         				$stream_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$rank[$i]['id']' AND node_Value != 'NULL' AND s_Node_ID IN ('".implode(',',$stream_id)."')");*/
+	         				$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+						/*
 						$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 		             											    'NODE_NAME   =' => 'Streams/Schools',
 		             											    'NODE_VALUE !=' => NULL));
 				        foreach($stream_query->result() as $stream_row)
+				        */
 				        {
-				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 				        }
 				        /*
 							For the undergraduate ,postgraduate and doctoral to count only once.
 				        */
+
 						$undergraduate = 0;
 						$doctoral = 0;
 						$masters = 0;
+
+/*						$degree_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Degree'");
+			         	$temp = $rank[$i]['id'];
+			         	$temp2 = '';
+						foreach($degree_id->result_array() as $row)
+						{
+							$temp2 .= $row['Snode_ID'] . ',' ;
+						}
+			         	$degree_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");*/
+			         	$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+						/*
 				        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 				             											    'NODE_NAME   =' => 'Degrees',
 				             											    'NODE_VALUE !=' => NULL));
+
+				        */
 				        foreach($degree_query->result() as $degree_row)
 				        {
-				        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+				        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 				        	{
 				        		$undergraduate = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+				        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 				        	{
 				        		$masters = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+				        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 				        	{
 				        		$doctoral = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
 				        }
 						 $k++;
@@ -1740,13 +2002,30 @@ class Search_model extends CI_Model {
 			             $rank[$k]['encoded_id'] = $this->College_model->id_encode($rank[$k]['id']);
 			             $rank[$k]['streams']   =  "";
 	           			 $rank[$k]['degree']    =  "";
-	           			 $rank[$k]['city']      =$phraseViews[0]->city;
+	           			 $rank[$k]['city']      = $phraseViews[0]->city;
+
+
+	           	/*		$stream_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Stream'");
+	         			$temp = $rank[$i]['id'];
+	         				$temp2 = '';
+						foreach($stream_id->result_array() as $row)
+						{
+							$temp2 .= $row['Snode_ID'] . ',' ;
+						}
+			         	$stream_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");*/
+
+			         	$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+
+	         			/*
 						$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 		             											    'NODE_NAME   =' => 'Streams/Schools',
 		             											    'NODE_VALUE !=' => NULL));
+		             	*/
 				        foreach($stream_query->result() as $stream_row)
 				        {
-				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 				        }
 				        /*
 							For the undergraduate ,postgraduate and doctoral to count only once.
@@ -1754,25 +2033,39 @@ class Search_model extends CI_Model {
 						$undergraduate = 0;
 						$doctoral = 0;
 						$masters = 0;
+
+/*						$degree_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Degree'");
+			         	$temp = $rank[$i]['id'];
+			         	$temp2 = '';
+						foreach($degree_id->result_array() as $row)
+						{
+							$temp2 .= $row['Snode_ID'] . ',' ;
+						}
+			         	$degree_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");*/
+			         	$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+						/*
 				        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 				             											    'NODE_NAME   =' => 'Degrees',
 				             											    'NODE_VALUE !=' => NULL));
+				        */
 				        foreach($degree_query->result() as $degree_row)
 				        {
-				        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+				        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 				        	{
 				        		$undergraduate = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+				        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 				        	{
 				        		$masters = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+				        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 				        	{
 				        		$doctoral = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
 				        }
 						 $k++;
@@ -1824,15 +2117,32 @@ class Search_model extends CI_Model {
 						 $rank[$k]['views']= $subtagViews[0]->Views;
 						 $rank[$k]['id'] = $subtagViews[0]->COLL_ID;
 			             $rank[$k]['encoded_id'] = $this->College_model->id_encode($rank[$k]['id']);
-			             $rank[$k]['streams']   =  "";
+			            $rank[$k]['streams']   =  "";
 	           			 $rank[$k]['degree']    =  "";
 	           			 $rank[$k]['city']      = $subtagViews[0]->city;
+
+	           		/*	$stream_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Stream'");
+			         	$temp = $rank[$i]['id'];
+			         	$temp2 = '';
+						foreach($stream_id->result_array() as $row)
+						{
+							$temp2 .= $row['Snode_ID'] . ',' ;
+						}
+			         	$stream_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");*/
+
+			         	$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+
+
+	           			 /*
 						$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 		             											    'NODE_NAME   =' => 'Streams/Schools',
 		             											    'NODE_VALUE !=' => NULL));
+		             	*/
 				        foreach($stream_query->result() as $stream_row)
 				        {
-				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 				        }
 				        /*
 							For the undergraduate ,postgraduate and doctoral to count only once.
@@ -1840,43 +2150,118 @@ class Search_model extends CI_Model {
 						$undergraduate = 0;
 						$doctoral = 0;
 						$masters = 0;
+
+/*						$degree_id = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable WHERE Snode_Type = 'Degree'");
+			         	$temp = $rank[$i]['id'];
+			         	$temp2 = '';
+						foreach($degree_id->result_array() as $row)
+						{
+							$temp2 .= $row['Snode_ID'] . ',' ;
+						}
+			         	$degree_query = $this->db->query("SELECT * FROM temp_table2 WHERE coll_ID = '$temp' AND node_Value != 'NULL' AND s_Node_ID IN ('".$temp2."')");*/
+			         	$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+	         			/*
 				        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 				             											    'NODE_NAME   =' => 'Degrees',
 				             											    'NODE_VALUE !=' => NULL));
+				        */
 				        foreach($degree_query->result() as $degree_row)
 				        {
-				        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+				        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 				        	{
 				        		$undergraduate = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+				        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 				        	{
 				        		$masters = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+				        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 				        	{
 				        		$doctoral = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
 				        }
 						 
 						 $k++;
+
 					 }					 
 				  }
 				 }
 				 }
 				  
 			 }
-			 
-	}
-		 //sorting
-		$fee = $this->getfield($rank,104);
-		$salary = $this->getfield($rank,143);
-		$class_size = $this->getfield($rank,1);
+		}
 		for($i=0;$i<sizeof($rank);$i++)
 		{
+			$rank[$i]['streams'] = substr($rank[$i]['streams'],0,-2);
+			$rank[$i]['degree'] = substr($rank[$i]['degree'],0,-2);
+		
+		}
+		 //sorting
+		//$fee = $this->getfield($rank,10);
+		//$salary = $this->getfield($rank,15);
+		if($sorting==0)
+		{
+			$pnode = $_SESSION['field_id'];
+		}
+		else if($sorting == 2 || $sorting == 3)
+		{
+			$pnode = 10;
+			$pnode2 = 15;
+			$_SESSION['field_name'] = 'Annual Expenses';
+			$_SESSION['field_name2'] = 'Starting Annual Salary';
+		}
+		else if($sorting == 4 || $sorting == 5)
+		{
+			$pnode = 15;
+			$pnode2 = 10;
+			$_SESSION['field_name'] = 'Starting Annual Salary';
+			$_SESSION['field_name2'] = 'Annual Expenses';
+		}
+		else if($sorting == 6 || $sorting == 7)
+		{
+			$pnode = 1;
+			$pnode2 = 10;
+			$_SESSION['field_name'] = 'Class Strength';
+			$_SESSION['field_name2'] = 'Annual Expenses';
+		}
+		else
+		{
+			$pnode = 15;
+			$pnode2 = 10;
+			$_SESSION['field_name'] = 'Starting Annual Salary';
+			$_SESSION['field_name2'] = 'Annual Expenses';
+		}
+
+		$field = $this->getfield($rank,$pnode);
+		$field2 = $this->getfield($rank,$pnode2);
+		for($i=0;$i<sizeof($rank);$i++)
+		{
+			if($field[$i] == "NA" && $sorting==0)
+			{
+				$field[$i] = -1;
+			}
+			if($field[$i] == "NA" && $sorting>=2 && $sorting%2==0)
+			{
+				$field[$i] = INT_MAX;
+			}
+			else if($field[$i] == "NA" && $sorting>=2 && $sorting%2==1)
+			{
+				$field[$i] = -1;
+			}
+			if($field2[$i] == "NA" && $sorting>=2 && $sorting%2==0)
+			{
+				$field2[$i] = INT_MAX;
+			}
+			else if($field2[$i] == "NA" && $sorting>=2 && $sorting%2==1)
+			{
+				$field2[$i] = -1;
+			}
+			/*
 			if($fee[$i] == "NA" && $sorting == 2)
 			{
 				$fee[$i] = INT_MAX;
@@ -1893,29 +2278,37 @@ class Search_model extends CI_Model {
 			{
 				$salary[$i] = -1;
 			}
-			if($class_size[$i] == "NA" && $sorting == 6)
+			if($field[$i] == "NA" && $sorting == 6)
 			{
-				$class_size[$i] = INT_MAX;
+				$field[$i] = INT_MAX;
 			}
-			else if($class_size[$i] == "NA" && $sorting == 7)
+			else if($field[$i] == "NA" && $sorting == 7)
 			{
-				$class_size[$i] = -1;
+				$field[$i] = -1;
 			}
+			*/
+			//$rank[$i]['fee'] = $fee[$i];
+			//$rank[$i]['salary'] = $salary[$i];
+			$rank[$i]['field'] = $field[$i];
+			$rank[$i]['field2'] = $field2[$i];			
 
-			$rank[$i]['fee'] = $fee[$i];
-			$rank[$i]['salary'] = $salary[$i];
-			$rank[$i]['class_size'] = $class_size[$i];
+			//echo '<pre>'; print_r($rank[$i]['COLL_NAME']); echo '</pre>';
 		}
+		//echo '<pre>'; print_r($rank); echo '</pre>';
+
+		/*
 		  if($sorting==2)
 		 {
+
 			  foreach ($rank as $key => $row) 
 				 {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
 						$salary[$key] = $row['salary'];
-						$class_size = $row['class_size'];
+						$field = $row['field'];
 				 }
-				array_multisort( $fee, SORT_ASC,$rank);
+				 //echo '<pre>'; print_r($rank); echo '</pre>';
+				array_multisort( $fee, SORT_ASC, SORT_NATURAL, $views,SORT_DESC,$rank);
 		 }
 		 else if($sorting==3){
 			  foreach ($rank as $key => $row) 
@@ -1923,9 +2316,9 @@ class Search_model extends CI_Model {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
 				 		$salary[$key] = $row['salary'];
-				 		$class_size = $row['class_size'];
+				 		$field = $row['field'];
 				 }
-				array_multisort( $fee, SORT_DESC,$views,SORT_DESC,$rank);
+				array_multisort( $fee, SORT_DESC, SORT_NATURAL,$views,SORT_DESC,$rank);
 		 }
 		 else if($sorting ==4){
 		 	foreach ($rank as $key => $row) 
@@ -1933,9 +2326,9 @@ class Search_model extends CI_Model {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
 						$salary[$key] = $row['salary'];
-						$class_size = $row['class_size'];
+						$field = $row['field'];
 				 }
-				array_multisort( $salary, SORT_ASC,$views,SORT_DESC,$rank);
+				array_multisort( $salary, SORT_ASC,SORT_NATURAL,$views,SORT_DESC,$rank);
 		 }
 		 else if($sorting ==5){
 		 	foreach ($rank as $key => $row) 
@@ -1943,46 +2336,104 @@ class Search_model extends CI_Model {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
 						$salary[$key] = $row['salary'];
-						$class_size = $row['class_size'];
+						$field = $row['field'];
 				 }
-				array_multisort( $salary, SORT_DESC,$views,SORT_DESC,$rank);
+				array_multisort( $salary, SORT_DESC, SORT_NATURAL,$views,SORT_DESC,$rank);
 		 }
 		 else if($sorting == 6){ //edit
+		 	$_SESSION['field_id'] = 1;
 		 	foreach ($rank as $key => $row)
 			 	{
 			 			$fee[$key]  = $row['fee'];
-				 		$class_size[$key] = $row['class_size'];
+				 		$field[$key] = $row['field'];
 				 		$views[$key] = $row['views'];
 				 		$salary[$key] = $row['salary'];
 			 	}
-			 	array_multisort($class_size, SORT_ASC,$views,SORT_DESC,$rank);
+			 	array_multisort($field, SORT_ASC, SORT_NATURAL, $views,SORT_DESC,$rank);
 		 }
 		else if($sorting == 7){ //edit
+			$_SESSION['field_id'] = 1;
 		 	foreach ($rank as $key => $row)
 			 	{
 			 			$fee[$key]  = $row['fee'];
-				 		$class_size[$key] = $row['class_size'];
+				 		$field[$key] = $row['field'];
 				 		$views[$key] = $row['views'];
 				 		$salary[$key] = $row['salary'];
 			 	}
-			 	array_multisort($class_size, SORT_DESC,$views,SORT_DESC,$rank);
+			 	array_multisort($field, SORT_DESC, SORT_NATURAL, $views,SORT_DESC,$rank);
 		 }
 		 else
 		 {
+		 	$rank[0]['header'] = 'Annual Expenses';
+		 	$rank[0]['header2'] = 'Starting Annual Salary';
 	      foreach ($rank as $key => $row) 
 				 {
 						$score[$key]  = $row['score'];
 						$views[$key]  = $row['views'];
 				 }
-				array_multisort( $score, SORT_DESC,$views,SORT_DESC,$rank);
-		 }
-		
+				array_multisort( $score, SORT_DESC, SORT_NATURAL, $views,SORT_DESC,$rank);
+		 }*/
+		/*
+		$pnode = 0;
+		if($sorting==2||$sorting==3)
+			$pnode = 104;
+		else if($sorting==4||$sorting==5)
+			$pnode = 143;
+		else if($sorting==6||$sorting==7)
+			$pnode = 1;
+		$field = $this->getfield($rank,$pnode);
+		for($i=0;$i<sizeof($rank);$i++)
+		{
+			if($field[$i] == "NA" ||$sorting%2==0)
+				$field[$i] = INT_MAX;
+			if($field[$i] == "NA" ||$sorting%2==1)
+				$field[$i] = -1;
+			$rank[$i]['field'] = $field[$i];
+		}
+		*/
+		if($sorting==0) //custom attribute node
+		{
+			foreach($rank as $key => $row)
+			{
+				$field[$key] = $row['field'];
+				$views[$key] = $row['views'];
+			}
+			array_multisort($field, SORT_DESC, SORT_NATURAL, $views, SORT_DESC, $rank);
+		}
+		else if($sorting>=2 && $sorting%2==0) //low to high
+		{
+			foreach($rank as $key => $row)
+			{
+				$field[$key] = $row['field'];
+				$views[$key] = $row['views'];
+			}
+			array_multisort($field, SORT_ASC, SORT_NATURAL, $views, SORT_DESC, $rank);
+		}
+		else if($sorting>=2 && $sorting%2==1) //high to low
+		{
+			foreach($rank as $key => $row)
+			{
+				$field[$key] = $row['field'];
+				$views[$key] = $row['views'];
+			}
+			array_multisort($field, SORT_DESC, SORT_NATURAL, $views, SORT_DESC, $rank);
+		}
+		else
+		{
+			foreach ($rank as $key => $row) 
+			{
+				$score[$key]  = $row['score'];
+				$views[$key]  = $row['views'];
+			}
+				array_multisort($score, SORT_DESC, SORT_NATURAL, $views,SORT_DESC,$rank);
+		}
 	return array_values($rank);
 	
 		
    } 
-   
+
        function filters_ranking($tags,$id,$sorting,$majorTag)
+
    {
 	    $this->load->model("College_model");
 		$rank = array();
@@ -2006,12 +2457,17 @@ class Search_model extends CI_Model {
         		$rank[$i]['degree']    =  "";
 	         	$rank[$i]['city']      = $query[$i]->city;
 
-				$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$i]['id'],
-		             											    'NODE_NAME   =' => 'Streams/Schools',
-		             											    'NODE_VALUE !=' => NULL));
+	         	$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$i]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+	         	/*
+				$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[0]['id'],
+         											    'NODE_NAME   =' => 'Streams/Schools',
+         											    'NODE_VALUE !=' => NULL));
+         		*/
 		        foreach($stream_query->result() as $stream_row)
 		        {
-		        	 $rank[$i]['streams'] =  $rank[$i]['streams'].$stream_row->NODE_VALUE.', ';
+		        	 $rank[$i]['streams'] =  $rank[$i]['streams'].$stream_row->node_Value.', ';
 		        }
 		        /*
 					For the undergraduate ,postgraduate and doctoral to count only once.
@@ -2019,25 +2475,30 @@ class Search_model extends CI_Model {
 				$undergraduate = 0;
 				$doctoral = 0;
 				$masters = 0;
-		        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$i]['id'],
+
+				$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$i]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+
+		        /*$degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$i]['id'],
 		             											    'NODE_NAME   =' => 'Degrees',
-		             											    'NODE_VALUE !=' => NULL));
+		             											    'NODE_VALUE !=' => NULL));*/
 		        foreach($degree_query->result() as $degree_row)
 		        {
-		        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+		        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 		        	{
 		        		$undergraduate = 1;
-		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->NODE_VALUE.', ';
+		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->node_Value.', ';
 		        	}
-		        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+		        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 		        	{
 		        		$masters = 1;
-		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->NODE_VALUE.', ';
+		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->node_Value.', ';
 		        	}
-		        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+		        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 		        	{
 		        		$doctoral = 1;
-		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->NODE_VALUE.', ';
+		        	 	$rank[$i]['degree'] =  $rank[$i]['degree'].$degree_row->node_Value.', ';
 		        	}
 		        }				 
 						 
@@ -2070,12 +2531,20 @@ class Search_model extends CI_Model {
    			 $rank[0]['degree']    =  "";
 	         $rank[0]['city']      = $queryMajorTagViews[0]->city;
 
+
+	        $stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[0]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+
+
+			/*
 			$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[0]['id'],
          											    'NODE_NAME   =' => 'Streams/Schools',
          											    'NODE_VALUE !=' => NULL));
+     		*/
 	        foreach($stream_query->result() as $stream_row)
 	        {
-	        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+	        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 	        }
 	        /*
 				For the undergraduate ,postgraduate and doctoral to count only once.
@@ -2083,30 +2552,37 @@ class Search_model extends CI_Model {
 			$undergraduate = 0;
 			$doctoral = 0;
 			$masters = 0;
+
+			$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[0]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+
+			/*
 	        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[0]['id'],
 	             											    'NODE_NAME   =' => 'Degrees',
 	             											    'NODE_VALUE !=' => NULL));
+	        */
 	        foreach($degree_query->result() as $degree_row)
 	        {
-	        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+	        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 	        	{
 	        		$undergraduate = 1;
-	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->NODE_VALUE.', ';
+	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->node_Value.', ';
 	        	}
-	        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+	        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 	        	{
 	        		$masters = 1;
-	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->NODE_VALUE.', ';
+	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->node_Value.', ';
 	        	}
-	        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+	        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 	        	{
 	        		$doctoral = 1;
-	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->NODE_VALUE.', ';
+	        	 	$rank[0]['degree'] =  $rank[0]['degree'].$degree_row->node_Value.', ';
 	        	}
 	        }
 			
 			 //phrase
-			 $phrase= $this->db->query("SELECT primary_college FROM synonyms where (synonym LIKE '% ".$majorTag." %' OR synonym LIKE '".$majorTag." %' OR synonym LIKE '".$majorTag."') AND colg_id IN (".implode(',',$id).")");
+			 $phrase= $this->db->query("SELECT primary_college FROM synonyms where (synonym LIKE '% ".$majorTag." %' OR synonym LIKE '".$majorTag." %' OR synonym LIKE '".$majorTag."') AND colg_id IN ('".implode(',',$id)."')");
 			 if(sizeof($phrase->result())>0)
 			 {  
 		      $phrase=$phrase->result();
@@ -2133,38 +2609,51 @@ class Search_model extends CI_Model {
 	           			 $rank[$k]['degree']    =  "";
 	           			 $rank[$k]['city']      = $phraseViews[0]->city;
 
+	           			$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+						/*
 						$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 		             											    'NODE_NAME   =' => 'Streams/Schools',
 		             											    'NODE_VALUE !=' => NULL));
 				        foreach($stream_query->result() as $stream_row)
+				        */
 				        {
-				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 				        }
 				        /*
 							For the undergraduate ,postgraduate and doctoral to count only once.
 				        */
+
 						$undergraduate = 0;
 						$doctoral = 0;
 						$masters = 0;
+
+						$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+						/*
 				        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 				             											    'NODE_NAME   =' => 'Degrees',
 				             											    'NODE_VALUE !=' => NULL));
+
+				        */
 				        foreach($degree_query->result() as $degree_row)
 				        {
-				        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+				        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 				        	{
 				        		$undergraduate = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+				        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 				        	{
 				        		$masters = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+				        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 				        	{
 				        		$doctoral = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
 				        }
 						 $k++;
@@ -2175,7 +2664,7 @@ class Search_model extends CI_Model {
 			 
 		}
 		else{
-		$phrase= $this->db->query("SELECT primary_college FROM synonyms where (synonym LIKE '% ".$majorTag." %' OR synonym LIKE '".$majorTag." %' OR synonym LIKE '% ".$majorTag."' OR synonym LIKE '".$majorTag."') AND colg_id IN (".implode(',',$id).") ");
+		$phrase= $this->db->query("SELECT primary_college FROM synonyms where (synonym LIKE '% ".$majorTag." %' OR synonym LIKE '".$majorTag." %' OR synonym LIKE '% ".$majorTag."' OR synonym LIKE '".$majorTag."') AND colg_id IN ('".implode(',',$id)."') ");
 			 if($phrase->num_rows()>0)
 			 {  
 		      $phrase=$phrase->result();
@@ -2195,12 +2684,19 @@ class Search_model extends CI_Model {
 	           			 $rank[$k]['degree']    =  "";
 	           			 $rank[$k]['city']      = $phraseViews[0]->city;
 
+
+	           			$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+
+	         			/*
 						$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 		             											    'NODE_NAME   =' => 'Streams/Schools',
 		             											    'NODE_VALUE !=' => NULL));
+		             	*/
 				        foreach($stream_query->result() as $stream_row)
 				        {
-				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 				        }
 				        /*
 							For the undergraduate ,postgraduate and doctoral to count only once.
@@ -2208,25 +2704,31 @@ class Search_model extends CI_Model {
 						$undergraduate = 0;
 						$doctoral = 0;
 						$masters = 0;
+
+						$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+						/*
 				        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 				             											    'NODE_NAME   =' => 'Degrees',
 				             											    'NODE_VALUE !=' => NULL));
+				        */
 				        foreach($degree_query->result() as $degree_row)
 				        {
-				        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+				        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 				        	{
 				        		$undergraduate = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+				        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 				        	{
 				        		$masters = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+				        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 				        	{
 				        		$doctoral = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
 				        }
 						 $k++;
@@ -2243,7 +2745,7 @@ class Search_model extends CI_Model {
 				 if(1)
 				 {
 					$tag =$tags[$i];
-				  $subtag = $this->db->query("SELECT primary_college FROM synonyms where (synonym LIKE '% ".$tag." %' OR synonym LIKE '".$tag." %' OR synonym LIKE '% ".$tag."' OR synonym LIKE '".$tag."') AND colg_id IN (".implode(',',$id).")");
+				  $subtag = $this->db->query("SELECT primary_college FROM synonyms where (synonym LIKE '% ".$tag." %' OR synonym LIKE '".$tag." %' OR synonym LIKE '% ".$tag."' OR synonym LIKE '".$tag."') AND colg_id IN ('".implode(',',$id)."')");
 				 if(sizeof($subtag->result)>=0){
 				 $subtag=$subtag->result();
 				  for($j=0;$j<sizeof($subtag);$j++)
@@ -2282,12 +2784,20 @@ class Search_model extends CI_Model {
 	           			 $rank[$k]['degree']    =  "";
 	           			 $rank[$k]['city']      = $subtagViews[0]->city;
 
+	           			$stream_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+         											    'Slevel  =' => 1,
+         											    'node_Value !=' => NULL));
+
+
+
+	           			 /*
 						$stream_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 		             											    'NODE_NAME   =' => 'Streams/Schools',
 		             											    'NODE_VALUE !=' => NULL));
+		             	*/
 				        foreach($stream_query->result() as $stream_row)
 				        {
-				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->NODE_VALUE.', ';
+				        	 $rank[$k]['streams'] =  $rank[$k]['streams'].$stream_row->node_Value.', ';
 				        }
 				        /*
 							For the undergraduate ,postgraduate and doctoral to count only once.
@@ -2295,25 +2805,31 @@ class Search_model extends CI_Model {
 						$undergraduate = 0;
 						$doctoral = 0;
 						$masters = 0;
+
+					$degree_query = $this->db->get_where('temp_table2',array('coll_ID     =' => $rank[$k]['id'],
+		             											    'Slevel   =' => 2,
+		             											    'node_Value !=' => NULL));
+	         			/*
 				        $degree_query = $this->db->get_where('table2',array('COLL_ID     =' => $rank[$k]['id'],
 				             											    'NODE_NAME   =' => 'Degrees',
 				             											    'NODE_VALUE !=' => NULL));
+				        */
 				        foreach($degree_query->result() as $degree_row)
 				        {
-				        	if($degree_row->NODE_VALUE == 'Undergraduate' && $undergraduate == 0)
+				        	if($degree_row->node_Value == 'Undergraduate' && $undergraduate == 0)
 				        	{
 				        		$undergraduate = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Masters' && $masters == 0)
+				        	else if($degree_row->node_Value == 'Masters' && $masters == 0)
 				        	{
 				        		$masters = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
-				        	else if($degree_row->NODE_VALUE == 'Doctoral' && $doctoral == 0)
+				        	else if($degree_row->node_Value == 'Doctoral' && $doctoral == 0)
 				        	{
 				        		$doctoral = 1;
-				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->NODE_VALUE.', ';
+				        	 	$rank[$k]['degree'] =  $rank[$k]['degree'].$degree_row->node_Value.', ';
 				        	}
 				        }
 						 
@@ -2325,34 +2841,173 @@ class Search_model extends CI_Model {
 				  
 			 }
 		}
-		 //sorting
-	   $fee = $this->getfield($rank,104);
-	   $salary = $this->getfield($rank,143);
-	   //$class_size = $this->getfield($rank,1);
 		for($i=0;$i<sizeof($rank);$i++)
 		{
+			$rank[$i]['streams'] = substr($rank[$i]['streams'],0,-2);
+			$rank[$i]['degree'] = substr($rank[$i]['degree'],0,-2);
+		
+		}
+		 //sorting
+	   //$fee = $this->getfield($rank,10);
+		//$salary = $this->getfield($rank,15);
+		if($sorting==0)
+		{
+			$pnode = $_SESSION['field_id'];
+			$pnode2 = 15;
+		}
+		else if($sorting == 2 || $sorting == 3)
+		{
+			$pnode = 10;
+			$pnode2 = 15;
+			$_SESSION['field_name'] = 'Annual Expenses';
+			$_SESSION['field_name2'] = 'Starting Annual Salary';
+		}
+		else if($sorting == 4 || $sorting == 5)
+		{
+			$pnode = 15;
+			$pnode2 = 10;
+			$_SESSION['field_name'] = 'Starting Annual Salary';
+			$_SESSION['field_name2'] = 'Annual Expenses';
+		}
+		else if($sorting == 6 || $sorting == 7)
+		{
+			$pnode = 1;
+			$pnode2 = 10;
+			$_SESSION['field_name'] = 'Class Strength';
+			$_SESSION['field_name2'] = 'Annual Expenses';
+		}
+		else
+		{
+			$pnode = 15;
+			$pnode2 = 10;
+			$_SESSION['field_name'] = 'Starting Annual Salary';
+			$_SESSION['field_name2'] = 'Annual Expenses';
+		}
+
+		$field = $this->getfield($rank,$pnode);
+		$field2 = $this->getfield($rank,$pnode2);
+		for($i=0;$i<sizeof($rank);$i++)
+		{
+			if($field[$i] == "NA" && $sorting==0)
+			{
+				$field[$i] = -1;
+			}
+			if($field[$i] == "NA" && $sorting>=2 && $sorting%2==0)
+			{
+				$field[$i] = INT_MAX;
+			}
+			else if($field[$i] == "NA" && $sorting>=2 && $sorting%2==1)
+			{
+				$field[$i] = -1;
+			}
+			if($field2[$i] == "NA" && $sorting>=2 && $sorting%2==0)
+			{
+				$field2[$i] = INT_MAX;
+			}
+			else if($field2[$i] == "NA" && $sorting>=2 && $sorting%2==1)
+			{
+				$field2[$i] = -1;
+			}
+			$rank[$i]['field'] = $field[$i];
+			$rank[$i]['field2'] = $field2[$i];	
+		}
+		if($sorting==0) //custom attribute node
+		{
+			foreach($rank as $key => $row)
+			{
+				$field[$key] = $row['field'];
+				$views[$key] = $row['views'];
+			}
+			array_multisort($field, SORT_DESC, SORT_NATURAL, $views, SORT_DESC, $rank);
+		}
+		else if($sorting>=2 && $sorting%2==0) //low to high
+		{
+			foreach($rank as $key => $row)
+			{
+				$field[$key] = $row['field'];
+				$views[$key] = $row['views'];
+			}
+			array_multisort($field, SORT_ASC, SORT_NATURAL, $views, SORT_DESC, $rank);
+		}
+		else if($sorting>=2 && $sorting%2==1) //high to low
+		{
+			foreach($rank as $key => $row)
+			{
+				$field[$key] = $row['field'];
+				$views[$key] = $row['views'];
+			}
+			array_multisort($field, SORT_DESC, SORT_NATURAL, $views, SORT_DESC, $rank);
+		}
+		else
+		{
+			foreach ($rank as $key => $row) 
+			{
+				$score[$key]  = $row['score'];
+				$views[$key]  = $row['views'];
+			}
+				array_multisort($score, SORT_DESC, SORT_NATURAL, $views,SORT_DESC,$rank);
+		}
+		/*
+		for($i=0;$i<sizeof($rank);$i++)
+		{	
+			if($field[$i] == "NA" && $sorting == 0)
+			{
+				$field[$i] = INT_MAX;
+			}
+			else if($field[$i] == "NA" && $sorting == 1)
+			{
+				$field[$i] = -1;
+			} 
+			if($fee[$i] == "NA" && $sorting == 2)
+			{
+				$fee[$i] = INT_MAX;
+			}
+			else if($fee[$i] == "NA" && $sorting == 3)
+			{
+				$fee[$i] = -1;
+			} 
+			if($salary[$i] == "NA" && $sorting == 4)
+			{
+				$salary[$i] = INT_MAX;
+			}
+			else if($salary[$i] == "NA" && $sorting == 5)
+			{
+				$salary[$i] = -1;
+			}
+			if($field[$i] == "NA" && $sorting == 6)
+			{
+				$field[$i] = INT_MAX;
+			}
+			else if($field[$i] == "NA" && $sorting == 7)
+			{
+				$field[$i] = -1;
+			}
+
 			$rank[$i]['fee'] = $fee[$i];
 			$rank[$i]['salary'] = $salary[$i];
-			//$rank[$i]['class_size'] = $class_size[$i];
+			$rank[$i]['field'] = $field[$i];
 		}
-		 if($sorting==2)
+		  if($sorting==2)
 		 {
 			  foreach ($rank as $key => $row) 
 				 {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
 						$salary[$key] = $row['salary'];
+						$field = $row['field'];
 				 }
-				array_multisort( $fee, SORT_ASC,$views,SORT_DESC,$rank);
+				 //echo '<pre>'; print_r($rank); echo '</pre>';
+				array_multisort( $fee, SORT_ASC, SORT_NATURAL, $views,SORT_DESC,$rank);
 		 }
 		 else if($sorting==3){
 			  foreach ($rank as $key => $row) 
 				 {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
-						$salary[$key] = $row['salary'];
+				 		$salary[$key] = $row['salary'];
+				 		$field = $row['field'];
 				 }
-				array_multisort( $fee, SORT_DESC,$views,SORT_DESC,$rank);
+				array_multisort( $fee, SORT_DESC, SORT_NATURAL,$views,SORT_DESC,$rank);
 		 }
 		 else if($sorting ==4){
 		 	foreach ($rank as $key => $row) 
@@ -2360,18 +3015,67 @@ class Search_model extends CI_Model {
 						$fee[$key]  = $row['fee'];
 						$views[$key]  = $row['views'];
 						$salary[$key] = $row['salary'];
+						$class_size = $row['class_size'];
 				 }
-				array_multisort( $salary, SORT_ASC,$views,SORT_DESC,$rank);
+				array_multisort( $salary, SORT_ASC,SORT_NATURAL,$views,SORT_DESC,$rank);
 		 }
-		  else
+		 else if($sorting ==5){
+		 	foreach ($rank as $key => $row) 
+				 {
+						$fee[$key]  = $row['fee'];
+						$views[$key]  = $row['views'];
+						$salary[$key] = $row['salary'];
+						$field = $row['field'];
+				 }
+				array_multisort( $salary, SORT_DESC, SORT_NATURAL,$views,SORT_DESC,$rank);
+		 }
+		 else if($sorting == 6){ //edit
+		 	foreach ($rank as $key => $row)
+			 	{
+			 			$fee[$key]  = $row['fee'];
+				 		$field[$key] = $row['field'];
+				 		$views[$key] = $row['views'];
+				 		$salary[$key] = $row['salary'];
+			 	}
+			 	array_multisort($field, SORT_ASC, SORT_NATURAL, $views,SORT_DESC,$rank);
+		 }
+		else if($sorting == 7){ //edit
+		 	foreach ($rank as $key => $row)
+			 	{
+			 			$fee[$key]  = $row['fee'];
+				 		$field[$key] = $row['field'];
+				 		$views[$key] = $row['views'];
+				 		$salary[$key] = $row['salary'];
+			 	}
+			 	array_multisort($field, SORT_DESC, SORT_NATURAL, $views,SORT_DESC,$rank);
+		 }
+		 else
 		 {
 	      foreach ($rank as $key => $row) 
 				 {
 						$score[$key]  = $row['score'];
 						$views[$key]  = $row['views'];
 				 }
-				array_multisort( $score, SORT_DESC,$views,SORT_DESC,$rank);
+				array_multisort( $score, SORT_DESC, SORT_NATURAL, $views,SORT_DESC,$rank);
 		 }
+		 /*
+		$field = $this->getfield($rank,$sorting);
+		for($i=0;$i<sizeof($rank);$i++)
+		{
+			if($field[$i] == "NA")
+			{
+				$field[$i] = -1;
+			}
+			$rank[$i]['field'] = $field[$i];
+		}
+		if($sorting){
+			foreach ($rank as $key => $row) 
+			{
+				$field[$key]  = $row['field'];
+				$views[$key]  = $row['views'];
+			}
+				array_multisort( $field, SORT_DESC, SORT_NATURAL,$views,SORT_DESC,$rank);
+		 }*/
 				/*$t = array();
 				for($m = 0;$m<sizeof($rank);$m++)
 				{
@@ -2383,7 +3087,6 @@ class Search_model extends CI_Model {
 			             $t[$m]['encoded_id'] =  $rank[$m]['encoded_id'];
 					}
 				}*/
-				
 				return array_values($rank);
 	
 		
@@ -2398,84 +3101,85 @@ function stream_nest($stream)
 	         $query = $this->db->query("SELECT * FROM NODETABLE where NODE_NAME LIKE  'Yes_".$stream[$i]."'  AND Node_Type LIKE 'Structural' ");
 			 $query=$query->row(0);
 			 $stream_id[$i] =  $query->Node_ID;
-	   }*/
-	$stream_id = (array)$stream;
-	if(sizeof($stream_id)>0){
-	$query =  $this->db->query("SELECT Node_ID FROM NODETABLE where Prev_Node IN(".implode(',',$stream_id).")");
-    $query = $query->result();
-	
-	for ($i=0;$i<sizeof($query);$i++) {
-    $query[$i] = $query[$i]->Node_ID;
-     }
-	foreach ($query as $key => $value) {
-    $query[$key] = $value +1;
-     }
-	 if(sizeof($query)>0)
-	 {
-	$query = $this->db->query("SELECT * FROM NODETABLE where Node_ID IN(".implode(',',$query).")");
-	$query =$query->result();
-	for ($i=0;$i<sizeof($query);$i++) {
-    $query[$i] = $query[$i]->Node_ID;
-     }
-	$temp=array();
-	$temp= $query;
+			}*/
+			$stream_id = (array)$stream;
+			if(sizeof($stream_id)>0)
+			{
+				$query =  $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable where Sparent_ID IN('".implode(',',$stream_id)."')");
+				$query = $query->result();
+
+				for ($i=0;$i<sizeof($query);$i++) {
+					$query[$i] = $query[$i]->Snode_ID;
+				}
+				foreach ($query as $key => $value) {
+					$query[$key] = $value +1;
+				}
+				if(sizeof($query)>0)
+				{
+					$query = $this->db->query("SELECT * FROM temp_struct_nodetable where Snode_ID IN('".implode(',',$query)."')");
+					$query =$query->result();
+					for ($i=0;$i<sizeof($query);$i++) {
+						$query[$i] = $query[$i]->Snode_ID;
+					}
+					$temp=array();
+					$temp= $query;
 	//degree available node_id list
-	$degrees = $this->node_name_generate($query);
-	 if(sizeof($temp)>0){
-	$query =  $this->db->query("SELECT Node_ID FROM NODETABLE where Prev_Node IN(".implode(',',$temp).")");
-    $query = $query->result();
-	for ($i=0;$i<sizeof($query);$i++) {
-    $query[$i] = $query[$i]->Node_ID;
-     }
-	foreach ($query as $key => $value) {
-    $query[$key] = $value +1;
-     }
-	 if(sizeof($query)>0)
-	 {
-	$query = $this->db->query("SELECT Node_ID FROM NODETABLE where Node_ID IN(".implode(',',$query).")");
-	$query =$query->result();
-	for ($i=0;$i<sizeof($query);$i++) {
-    $query[$i] = $query[$i]->Node_ID;
-     }
-	
+					$degrees = $this->node_name_generate($query);
+					if(sizeof($temp)>0){
+						$query =  $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable where Sparent_ID IN('".implode(',',$temp)."')");
+						$query = $query->result();
+						for ($i=0;$i<sizeof($query);$i++) {
+							$query[$i] = $query[$i]->Snode_ID;
+						}
+						foreach ($query as $key => $value) {
+							$query[$key] = $value +1;
+						}
+						if(sizeof($query)>0)
+						{
+							$query = $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable where Snode_ID IN('".implode(',',$query)."')");
+							$query =$query->result();
+							for ($i=0;$i<sizeof($query);$i++) {
+								$query[$i] = $query[$i]->Snode_ID;
+							}
+
 	//degree available node_id list
-	$majors_id = $query;
-	$major = $this->node_name_generate($query);
-	 }
-	 }
-	}
-	}
-	return array($degrees,$major,$majors_id);
-}
+							$majors_id = $query;
+							$major = $this->node_name_generate($query);
+						}
+					}
+				}
+			}
+			return array($degrees,$major,$majors_id);
+		}
 
 function degree_nest($degree){
 	$majors = array();
 	$l=0;
 	for($i=0;$i<sizeof($degree);$i++)
 	   {
-	         $query = $this->db->query("SELECT * FROM NODETABLE where NODE_NAME LIKE  'Yes_".$degree[$i]."'  AND Node_Type LIKE 'Structural' ");
+	         $query = $this->db->query("SELECT * FROM temp_struct_nodetable where Snode_Name LIKE  '".$degree[$i]."'");
 			 $query = $query->result();
 			 for($k=0;$k<sizeof($query);$k++)
 			 {
-			 $degree_id[$l] =  $query[$k]->Node_ID;
+			 $degree_id[$l] =  $query[$k]->Snode_ID;
 			 $l++;
 			 }
 	   }
 	$degree_id = array_values(array_filter($degree_id));
 	if(sizeof($degree_id)>0){
-	$query =  $this->db->query("SELECT Node_ID FROM NODETABLE where Prev_Node IN(".implode(',',$degree_id).")");
+	$query =  $this->db->query("SELECT Snode_ID FROM temp_struct_nodetable where Sparent_ID IN('".implode(',',$degree_id)."')");
     $query = $query->result();
 	if(sizeof($query)>0){
 	for ($i=0;$i<sizeof($query);$i++) {
-    $query[$i] = $query[$i]->Node_ID;
+    $query[$i] = $query[$i]->Snode_ID;
      }
 	foreach ($query as $key => $value) {
     $query[$key] = $value +1;
      }
-	$query = $this->db->query("SELECT * FROM NODETABLE where Node_ID IN(".implode(',',$query).")");
+	$query = $this->db->query("SELECT * FROM temp_struct_nodetable where Snode_ID IN('".implode(',',$query)."')");
 	$query =$query->result();
 	for ($i=0;$i<sizeof($query);$i++) {
-    $query[$i] = $query[$i]->Node_ID;
+    $query[$i] = $query[$i]->Snode_ID;
      }
 	$temp= $query;
 	//degree available node_id list
@@ -2487,35 +3191,35 @@ function degree_nest($degree){
 	return array($majors,$majors_id);
 }
 
-	function major_nest($major){
-		$degree= array();
-		$stream = array();
-		$query_Node_Name = array();
-		$query_prev_node = array();
-		$query_Node_id = array();
-		
-		for($i=0;$i<sizeof($major);$i++)
-		   {
-		         $query = $this->db->query("SELECT * FROM NODETABLE where Node_ID LIKE  ".$major[$i]." ");
-				 $query  =  $query->result();
-				 $major_prev_id[$i] = $query[0]->Prev_Node;
-				 
-		   }
-		$temp = $major_prev_id;
-		$m=1;
-		if(sizeof($temp)>0){
+function major_nest($major){
+	$degree= array();
+	$stream = array();
+	$query_Node_Name = array();
+	$query_prev_node = array();
+	$query_Node_id = array();
+
+	for($i=0;$i<sizeof($major);$i++)
+	{
+		$query = $this->db->query("SELECT * FROM temp_struct_nodetable where Snode_ID LIKE  ".$major[$i]." ");
+		$query  =  $query->result();
+		$major_prev_id[$i] = $query[0]->Sparent_ID;
+
+	}
+	$temp = $major_prev_id;
+	$m=1;
+	if(sizeof($temp)>0){
 		while($m>=0){
-		$query =  $this->db->query("SELECT * FROM NODETABLE where Node_ID IN(".implode(',',$temp).")");
-	    $query = $query->result();
-		if(sizeof($query)>0){
-		for ($i=0;$i<sizeof($query);$i++) {
-	    $query_prev_node[$i] = $query[$i]->Prev_Node;
-		$query_Node_id[$i] = $query[$i]->Node_ID;
-		$query_Node_Name[$i] = $query[$i]->Node_Name;
-	     }
-		 $temp = $query_prev_node;
-		 $m--;
-		}
+			$query =  $this->db->query("SELECT * FROM temp_struct_nodetable where Snode_ID IN('".implode(',',$temp)."')");
+			$query = $query->result();
+			if(sizeof($query)>0){
+				for ($i=0;$i<sizeof($query);$i++) {
+					$query_prev_node[$i] = $query[$i]->Sparent_ID;
+					$query_Node_id[$i] = $query[$i]->Snode_ID;
+					$query_Node_Name[$i] = $query[$i]->Snode_Name;
+				}
+				$temp = $query_prev_node;
+				$m--;
+			}
 		}
 		$degree = $query_Node_Name;
 		$degree = array_values(array_unique($degree));
@@ -2524,24 +3228,24 @@ function degree_nest($degree){
 		$query2 = array();
 		$m=1;
 		if(sizeof($temp)>0){
-		while($m>=0){
-		$query =  $this->db->query("SELECT * FROM NODETABLE where Node_ID IN(".implode(',',$temp).")");
-	    $query = $query->result();
-		if(sizeof($query)>0){
-		for ($i=0;$i<sizeof($query);$i++) {
-	    $query2[$i] = $query[$i]->Prev_Node;
-		$query_Node_id[$i] = $query[$i]->Node_ID;
-		$query_Node_Name[$i] = $query[$i]->Node_Name;
-	     }
-		}
-		 $temp = $query2;
-		 $m--;
-		}
-		$stream = $query_Node_Name;
+			while($m>=0){
+				$query =  $this->db->query("SELECT * FROM temp_struct_nodetable where Snode_ID IN('".implode(',',$temp)."')");
+				$query = $query->result();
+				if(sizeof($query)>0){
+					for ($i=0;$i<sizeof($query);$i++) {
+						$query2[$i] = $query[$i]->Sparent_ID;
+						$query_Node_id[$i] = $query[$i]->Snode_ID;
+						$query_Node_Name[$i] = $query[$i]->Snode_Name;
+					}
+				}
+				$temp = $query2;
+				$m--;
+			}
+			$stream = $query_Node_Name;
 		}
 	}
-		return array($degree,$stream);
-	}
+	return array($degree,$stream);
+}
 
 	function get_tagname($node)
 	{
@@ -2569,11 +3273,11 @@ function degree_nest($degree){
 		
 		$result=array();
 		for ($i=0;$i<sizeof($query);$i++) {
-			$query1 = $this->db->query("SELECT * FROM `NODETABLE` WHERE `Node_ID` =$query[$i]");
-		$query1 =$query1->result();
-	    $result[$i] = $query1[0]->Node_Name;
-	     }
-		 return $result;
+			$query1 = $this->db->query("SELECT * FROM temp_struct_nodetable WHERE Snode_ID = '".$query[$i]."'");
+			$query1 =$query1->result();
+			$result[$i] = $query1[0]->Snode_Name;
+		}
+		return $result;
 	}
 	function check_tags($val)
 	{
